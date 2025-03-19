@@ -3,10 +3,30 @@ use wgpu::util::DeviceExt;
 use std::time::{Duration, Instant};
 use glam::{Vec3, Mat4};
 use gilrs::{Gilrs, Button, Event as GilrsEvent};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 mod camera;
 mod texture;
 mod model;
+
+// 添加颜色结构体
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+struct Color {
+    r: f64,
+    g: f64,
+    b: f64,
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Color {
+            r: 0.5,
+            g: 0.5,
+            b: 0.5,
+        }
+    }
+}
 
 fn main() {
     env_logger::init();
@@ -17,7 +37,16 @@ fn main() {
         .build(&event_loop)
         .unwrap();
     
-    let mut state = pollster::block_on(State::new(&window));
+    // 创建共享的墙体颜色状态
+    let wall_color = Arc::new(Mutex::new(Color::default()));
+    
+    // 启动HTTP服务器线程
+    let http_wall_color = wall_color.clone();
+    thread::spawn(move || {
+        start_http_server(http_wall_color);
+    });
+    
+    let mut state = pollster::block_on(State::new(&window, wall_color));
     let mut last_render_time = Instant::now();
     
     // Initialize controller support
@@ -101,6 +130,45 @@ fn main() {
     });
 }
 
+// 启动HTTP服务器的函数
+fn start_http_server(wall_color: Arc<Mutex<Color>>) {
+    use warp::Filter;
+    // 创建一个运行时
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    
+    rt.block_on(async {
+        // 创建一个路由处理颜色更新
+        let wall_color_put = wall_color.clone();
+        let color_route = warp::path("color")
+            .and(warp::put())
+            .and(warp::body::json())
+            .map(move |new_color: Color| {
+                let mut color = wall_color_put.lock().unwrap();
+                *color = new_color;
+                warp::reply::json(&*color)
+            });
+        
+        // 获取当前颜色的路由
+        let wall_color_get = wall_color.clone();
+        let get_color = warp::path("color")
+            .and(warp::get())
+            .map(move || {
+                let color = wall_color_get.lock().unwrap();
+                warp::reply::json(&*color)
+            });
+        
+        // 合并路由
+        let routes = color_route.or(get_color);
+        
+        println!("HTTP服务器启动在 http://localhost:3030");
+        println!("使用 PUT /color 更新墙体颜色");
+        println!("使用 GET /color 获取当前墙体颜色");
+        
+        warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+    });
+}
+
+// 在 State 结构体中添加墙体颜色的缓冲区和绑定组
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -116,10 +184,14 @@ struct State {
     depth_texture: texture::Texture,
     models: Vec<model::Model>,
     is_fullscreen: bool,
+    wall_color: Arc<Mutex<Color>>, // 添加墙体颜色
+    wall_color_buffer: wgpu::Buffer,
+    wall_color_bind_group: wgpu::BindGroup,
 }
 
 impl State {
-    async fn new(window: &Window) -> Self {
+    async fn new(window: &Window, wall_color: Arc<Mutex<Color>>) -> Self {
+
         let size = window.inner_size();
         
         // Instance is a handle to the GPU
@@ -224,19 +296,58 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
         
-        // Create render pipeline layout
-        let render_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
-                push_constant_ranges: &[],
+        
+        // Create models for the parking garage
+        let models = model::create_parking_garage(&device);
+
+        
+        // 创建墙体颜色 uniform 缓冲区
+        let wall_color_data = [0.5f32, 0.5f32, 0.5f32, 0.0f32]; // 初始颜色 + padding
+
+        
+        let wall_color_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Wall Color Buffer"),
+                contents: bytemuck::cast_slice(&wall_color_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
         
-        // Create render pipeline
+        // 创建墙体颜色绑定组布局
+        let wall_color_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ],
+                label: Some("wall_color_bind_group_layout"),
+            }
+        );
+
+        // 创建渲染管线布局（移动到这里，并只创建一次）
+        let render_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                    &wall_color_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            }
+        );
+
+        // 创建渲染管线（使用上面创建的布局）
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
+            layout: Some(&render_pipeline_layout), // 使用包含墙体颜色绑定组的布局
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
@@ -274,10 +385,23 @@ impl State {
             },
             multiview: None,
         });
-        
-        // Create models for the parking garage
-        let models = model::create_parking_garage(&device);
-        
+
+        // 创建墙体颜色绑定组
+        let wall_color_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &wall_color_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wall_color_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("wall_color_bind_group"),
+            }
+        );
+
+        // 删除第二次创建的 render_pipeline_layout
+
         Self {
             surface,
             device,
@@ -293,6 +417,9 @@ impl State {
             depth_texture,
             models,
             is_fullscreen: false,
+            wall_color, // 添加墙体颜色
+            wall_color_bind_group,
+            wall_color_buffer,
         }
     }
     
@@ -340,6 +467,26 @@ impl State {
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform.update_view_proj(&self.camera, self.config.width as f32 / self.config.height as f32);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+        
+        // 更新墙体颜色（如果有变化）
+        self.update_wall_color();
+    }
+    
+    fn update_wall_color(&mut self) {
+        if let Ok(color) = self.wall_color.lock() {
+            // 更新墙体颜色 uniform 缓冲区
+            let wall_color_data = [
+                color.r as f32,
+                color.g as f32,
+                color.b as f32,
+                0.0f32, // padding
+            ];
+            self.queue.write_buffer(
+                &self.wall_color_buffer,
+                0,
+                bytemuck::cast_slice(&wall_color_data)
+            );
+        }
     }
     
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -378,6 +525,7 @@ impl State {
             
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.wall_color_bind_group, &[]); // 设置墙体颜色绑定组
             
             // Render all models
             for model in &self.models {

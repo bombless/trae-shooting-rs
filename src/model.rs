@@ -6,6 +6,7 @@ use glam::{Vec3, Mat4};
 pub struct ModelVertex {
     position: [f32; 3],
     color: [f32; 3],
+    model_type: f32, // 添加模型类型字段
 }
 
 // Manual implementation of bytemuck traits
@@ -28,42 +29,67 @@ impl ModelVertex {
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32,
+                },
             ],
         }
     }
 }
 
+// 在模型结构中添加名称和颜色属性
 pub struct Model {
+    pub name: String,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
+    pub color: [f32; 3],
+    pub model_type: u32, // 添加模型类型字段，1 表示墙体
 }
 
+// 修改创建模型的方法，添加名称和颜色参数
 impl Model {
-    pub fn new(device: &wgpu::Device, vertices: &[ModelVertex], indices: &[u16]) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        name: &str,
+        vertices: &[ModelVertex],
+        indices: &[u16],
+        color: [f32; 3],
+        is_wall: bool,
+    ) -> Self {
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
+                label: Some(&format!("{} Vertex Buffer", name)),
                 contents: bytemuck::cast_slice(vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             }
         );
-
+        
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
+                label: Some(&format!("{} Index Buffer", name)),
                 contents: bytemuck::cast_slice(indices),
                 usage: wgpu::BufferUsages::INDEX,
             }
         );
-
+        
         Self {
+            name: name.to_string(),
             vertex_buffer,
             index_buffer,
             num_indices: indices.len() as u32,
+            color,
+            model_type: if is_wall { 1 } else { 0 }
         }
     }
-
+    
+    // 添加更新颜色的方法
+    pub fn update_color(&mut self, r: f32, g: f32, b: f32) {
+        self.color = [r, g, b];
+    }
+    
     pub fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -72,6 +98,7 @@ impl Model {
 }
 
 // Create a checkerboard pattern for floor or ceiling
+// 修改创建棋盘的函数
 fn create_checkerboard(
     device: &wgpu::Device,
     size: f32,
@@ -97,15 +124,15 @@ fn create_checkerboard(
 
             // 根据是否为天花板调整顶点顺序
             if is_ceiling {
-                vertices.push(ModelVertex { position: [x0, height, z0], color });
-                vertices.push(ModelVertex { position: [x1, height, z0], color });
-                vertices.push(ModelVertex { position: [x1, height, z1], color });
-                vertices.push(ModelVertex { position: [x0, height, z1], color });
+                vertices.push(ModelVertex { position: [x0, height, z0], color, model_type: 0.0 });
+                vertices.push(ModelVertex { position: [x1, height, z0], color, model_type: 0.0 });
+                vertices.push(ModelVertex { position: [x1, height, z1], color, model_type: 0.0 });
+                vertices.push(ModelVertex { position: [x0, height, z1], color, model_type: 0.0 });
             } else {
-                vertices.push(ModelVertex { position: [x0, height, z0], color });
-                vertices.push(ModelVertex { position: [x0, height, z1], color });
-                vertices.push(ModelVertex { position: [x1, height, z1], color });
-                vertices.push(ModelVertex { position: [x1, height, z0], color });
+                vertices.push(ModelVertex { position: [x0, height, z0], color, model_type: 0.0 });
+                vertices.push(ModelVertex { position: [x0, height, z1], color, model_type: 0.0 });
+                vertices.push(ModelVertex { position: [x1, height, z1], color, model_type: 0.0 });
+                vertices.push(ModelVertex { position: [x1, height, z0], color, model_type: 0.0 });
             }
             
             indices.extend_from_slice(&[
@@ -115,10 +142,11 @@ fn create_checkerboard(
         }
     }
     
-    Model::new(device, &vertices, &indices)
+    Model::new(device, "checkerboard", &vertices, &indices, color1, false)
 }
 
 // Create a wall with thickness
+// 修改创建墙体的函数
 fn create_wall(
     device: &wgpu::Device,
     start: [f32; 3],
@@ -155,16 +183,15 @@ fn create_wall(
     
     // Add all 8 vertices
     // Front face vertices
-    vertices.push(ModelVertex { position: front_bl, color });
-    vertices.push(ModelVertex { position: front_br, color });
-    vertices.push(ModelVertex { position: front_tr, color });
-    vertices.push(ModelVertex { position: front_tl, color });
+    vertices.push(ModelVertex { position: front_bl, color, model_type: 1.0 });
+    vertices.push(ModelVertex { position: front_br, color, model_type: 1.0 });
+    vertices.push(ModelVertex { position: front_tr, color, model_type: 1.0 });
+    vertices.push(ModelVertex { position: front_tl, color, model_type: 1.0 });
     
-    // Back face vertices
-    vertices.push(ModelVertex { position: back_bl, color });
-    vertices.push(ModelVertex { position: back_br, color });
-    vertices.push(ModelVertex { position: back_tr, color });
-    vertices.push(ModelVertex { position: back_tl, color });
+    vertices.push(ModelVertex { position: back_bl, color, model_type: 1.0 });
+    vertices.push(ModelVertex { position: back_br, color, model_type: 1.0 });
+    vertices.push(ModelVertex { position: back_tr, color, model_type: 1.0 });
+    vertices.push(ModelVertex { position: back_tl, color, model_type: 1.0 });
     
     // Add indices for all six faces (each face has two triangles)
     let base_idx = 0;
@@ -217,7 +244,7 @@ fn create_wall(
     indices.push(base_idx + 6);
     indices.push(base_idx + 2);
     
-    Model::new(device, &vertices, &indices)
+    Model::new(device, "wall", &vertices, &indices, [0.5, 0.5, 0.5], true)
 }
 
 // Create a wall edge (black outline)
@@ -255,10 +282,10 @@ fn create_wall_edge(
     
     // Front-left vertical edge - make it protrude in all directions
     let fl_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [start[0] - edge_thickness - tx * edge_offset, 0.0, start[2] - edge_thickness - tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [start[0] + edge_thickness - tx * edge_offset, 0.0, start[2] + edge_thickness - tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [start[0] + edge_thickness - tx * edge_offset, height, start[2] + edge_thickness - tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [start[0] - edge_thickness - tx * edge_offset, height, start[2] - edge_thickness - tz * edge_offset], color });
+    vertices.push(ModelVertex { position: [start[0] - edge_thickness - tx * edge_offset, 0.0, start[2] - edge_thickness - tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [start[0] + edge_thickness - tx * edge_offset, 0.0, start[2] + edge_thickness - tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [start[0] + edge_thickness - tx * edge_offset, height, start[2] + edge_thickness - tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [start[0] - edge_thickness - tx * edge_offset, height, start[2] - edge_thickness - tz * edge_offset], color, model_type: 0.0 });
     
     // Add indices for the front-left vertical edge - ensure correct winding order for visibility
     indices.push(fl_base_idx);
@@ -270,10 +297,10 @@ fn create_wall_edge(
     
     // Front-right vertical edge - make it protrude in all directions
     let fr_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [end[0] - edge_thickness + tx * edge_offset, 0.0, end[2] - edge_thickness + tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [end[0] + edge_thickness + tx * edge_offset, 0.0, end[2] + edge_thickness + tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [end[0] + edge_thickness + tx * edge_offset, height, end[2] + edge_thickness + tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [end[0] - edge_thickness + tx * edge_offset, height, end[2] - edge_thickness + tz * edge_offset], color });
+    vertices.push(ModelVertex { position: [end[0] - edge_thickness + tx * edge_offset, 0.0, end[2] - edge_thickness + tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [end[0] + edge_thickness + tx * edge_offset, 0.0, end[2] + edge_thickness + tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [end[0] + edge_thickness + tx * edge_offset, height, end[2] + edge_thickness + tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [end[0] - edge_thickness + tx * edge_offset, height, end[2] - edge_thickness + tz * edge_offset], color, model_type: 0.0 });
     
     // Add indices for the front-right vertical edge - ensure correct winding order for visibility
     indices.push(fr_base_idx);
@@ -285,10 +312,10 @@ fn create_wall_edge(
     
     // Back-left vertical edge (for walls with thickness) - make it protrude in all directions
     let bl_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness - tx * edge_offset, 0.0, start[2] + nz * wall_thickness - edge_thickness - tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness + edge_thickness - tx * edge_offset, 0.0, start[2] + nz * wall_thickness + edge_thickness - tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness + edge_thickness - tx * edge_offset, height, start[2] + nz * wall_thickness + edge_thickness - tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness - tx * edge_offset, height, start[2] + nz * wall_thickness - edge_thickness - tz * edge_offset], color });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness - tx * edge_offset, 0.0, start[2] + nz * wall_thickness - edge_thickness - tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness + edge_thickness - tx * edge_offset, 0.0, start[2] + nz * wall_thickness + edge_thickness - tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness + edge_thickness - tx * edge_offset, height, start[2] + nz * wall_thickness + edge_thickness - tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness - tx * edge_offset, height, start[2] + nz * wall_thickness - edge_thickness - tz * edge_offset], color, model_type: 0.0 });
     
     // Add indices for the back-left vertical edge - ensure correct winding order for visibility
     indices.push(bl_base_idx);
@@ -300,14 +327,21 @@ fn create_wall_edge(
     
     // Back-right vertical edge (for walls with thickness) - make it protrude in all directions
     let br_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness - edge_thickness + tx * edge_offset, 0.0, end[2] + nz * wall_thickness - edge_thickness + tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness + tx * edge_offset, 0.0, end[2] + nz * wall_thickness + edge_thickness + tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness + tx * edge_offset, height, end[2] + nz * wall_thickness + edge_thickness + tz * edge_offset], color });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness - edge_thickness + tx * edge_offset, height, end[2] + nz * wall_thickness - edge_thickness + tz * edge_offset], color });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness - edge_thickness + tx * edge_offset, 0.0, end[2] + nz * wall_thickness - edge_thickness + tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness + tx * edge_offset, 0.0, end[2] + nz * wall_thickness + edge_thickness + tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness + tx * edge_offset, height, end[2] + nz * wall_thickness + edge_thickness + tz * edge_offset], color, model_type: 0.0 });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness - edge_thickness + tx * edge_offset, height, end[2] + nz * wall_thickness - edge_thickness + tz * edge_offset], color, model_type: 0.0 });
     
+    // 在 create_wall_edge 函数末尾添加缺少的索引
     // Add indices for the back-right vertical edge
+    indices.push(br_base_idx);
+    indices.push(br_base_idx + 1);
+    indices.push(br_base_idx + 2);
+    indices.push(br_base_idx);
+    indices.push(br_base_idx + 2);
+    indices.push(br_base_idx + 3);
     
-    Model::new(device, &vertices, &indices)
+    Model::new(device, "wall_edge", &vertices, &indices, [0.0, 0.0, 0.0], false)
 }
 
 // Create the entire parking garage
