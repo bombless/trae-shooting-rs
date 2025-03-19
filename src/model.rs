@@ -79,6 +79,7 @@ fn create_checkerboard(
     height: f32,
     color1: [f32; 3],
     color2: [f32; 3],
+    is_ceiling: bool, // 添加参数控制朝向
 ) -> Model {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
@@ -91,23 +92,26 @@ fn create_checkerboard(
             let x1 = x0 + tile_size;
             let z1 = z0 + tile_size;
             
-            // Determine color based on checkerboard pattern
             let color = if (x + z) % 2 == 0 { color1 } else { color2 };
-            
-            // Add vertices for this tile
             let base_idx = vertices.len() as u16;
-            vertices.push(ModelVertex { position: [x0, height, z0], color });
-            vertices.push(ModelVertex { position: [x1, height, z0], color });
-            vertices.push(ModelVertex { position: [x1, height, z1], color });
-            vertices.push(ModelVertex { position: [x0, height, z1], color });
+
+            // 根据是否为天花板调整顶点顺序
+            if is_ceiling {
+                vertices.push(ModelVertex { position: [x0, height, z0], color });
+                vertices.push(ModelVertex { position: [x1, height, z0], color });
+                vertices.push(ModelVertex { position: [x1, height, z1], color });
+                vertices.push(ModelVertex { position: [x0, height, z1], color });
+            } else {
+                vertices.push(ModelVertex { position: [x0, height, z0], color });
+                vertices.push(ModelVertex { position: [x0, height, z1], color });
+                vertices.push(ModelVertex { position: [x1, height, z1], color });
+                vertices.push(ModelVertex { position: [x1, height, z0], color });
+            }
             
-            // Add indices for two triangles forming the tile
-            indices.push(base_idx);
-            indices.push(base_idx + 1);
-            indices.push(base_idx + 2);
-            indices.push(base_idx);
-            indices.push(base_idx + 2);
-            indices.push(base_idx + 3);
+            indices.extend_from_slice(&[
+                base_idx, base_idx + 1, base_idx + 2,
+                base_idx, base_idx + 2, base_idx + 3,
+            ]);
         }
     }
     
@@ -325,6 +329,7 @@ pub fn create_parking_garage(device: &wgpu::Device) -> Vec<Model> {
         0.0,  // height (at ground level)
         floor_color1,
         floor_color2,
+        false
     );
     models.push(floor);
     
@@ -336,6 +341,7 @@ pub fn create_parking_garage(device: &wgpu::Device) -> Vec<Model> {
         4.0,  // height (ceiling height)
         ceiling_color1,
         ceiling_color2,
+        true
     );
     models.push(ceiling);
     
