@@ -213,52 +213,52 @@ fn create_wall(
     
     // Front face (0,1,2,3)
     indices.push(base_idx);
+    indices.push(base_idx + 2);
     indices.push(base_idx + 1);
-    indices.push(base_idx + 2);
     indices.push(base_idx);
-    indices.push(base_idx + 2);
     indices.push(base_idx + 3);
+    indices.push(base_idx + 2);
     
     // Back face (4,5,6,7)
     indices.push(base_idx + 4);
-    indices.push(base_idx + 6);
     indices.push(base_idx + 5);
-    indices.push(base_idx + 4);
-    indices.push(base_idx + 7);
     indices.push(base_idx + 6);
+    indices.push(base_idx + 4);
+    indices.push(base_idx + 6);
+    indices.push(base_idx + 7);
     
     // Top face (3,2,6,7)
     indices.push(base_idx + 3);
+    indices.push(base_idx + 6);
     indices.push(base_idx + 2);
-    indices.push(base_idx + 6);
     indices.push(base_idx + 3);
-    indices.push(base_idx + 6);
     indices.push(base_idx + 7);
+    indices.push(base_idx + 6);
     
     // Bottom face (0,1,5,4)
     indices.push(base_idx);
-    indices.push(base_idx + 5);
     indices.push(base_idx + 1);
-    indices.push(base_idx);
-    indices.push(base_idx + 4);
     indices.push(base_idx + 5);
+    indices.push(base_idx);
+    indices.push(base_idx + 5);
+    indices.push(base_idx + 4);
     
     // Left face (0,3,7,4)
     indices.push(base_idx);
+    indices.push(base_idx + 7);
     indices.push(base_idx + 3);
-    indices.push(base_idx + 7);
     indices.push(base_idx);
-    indices.push(base_idx + 7);
     indices.push(base_idx + 4);
+    indices.push(base_idx + 7);
     
     // Right face (1,2,6,5)
     indices.push(base_idx + 1);
+    indices.push(base_idx + 6);
     indices.push(base_idx + 5);
-    indices.push(base_idx + 6);
     indices.push(base_idx + 1);
-    indices.push(base_idx + 6);
     indices.push(base_idx + 2);
-    
+    indices.push(base_idx + 6);
+
     Model::new(device, "wall", &vertices, &indices, [0.5, 0.5, 0.5], true, None)
 }
 
