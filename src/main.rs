@@ -173,7 +173,7 @@ impl State {
         let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
         
         // Camera setup
-        let camera = camera::Camera::new((0.0, 1.8, 0.0), 0.0, 0.0);
+        let camera = camera::Camera::new((0.0, 1.8, -2.0), 0.0, 0.0); // 将 z 坐标从 0.0 改为 2.0，让相机往前移动一些
         let camera_controller = camera::CameraController::new(4.0, 1.0);
         
         let mut camera_uniform = camera::CameraUniform::new();
