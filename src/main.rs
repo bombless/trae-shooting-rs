@@ -164,7 +164,7 @@ fn start_http_server(wall_color: Arc<Mutex<Color>>) {
         println!("使用 PUT /color 更新墙体颜色");
         println!("使用 GET /color 获取当前墙体颜色");
         
-        warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+        warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
     });
 }
 
@@ -187,6 +187,7 @@ struct State {
     wall_color: Arc<Mutex<Color>>, // 添加墙体颜色
     wall_color_buffer: wgpu::Buffer,
     wall_color_bind_group: wgpu::BindGroup,
+    texture_bind_group: wgpu::BindGroup, // 添加纹理绑定组
 }
 
 impl State {
@@ -240,6 +241,17 @@ impl State {
         };
         
         surface.configure(&device, &config);
+
+        
+
+        // 加载狗狗纹理
+        let dog_bytes = include_bytes!("../dog.png"); // 确保这个路径正确
+        let dog_texture = texture::Texture::from_bytes(
+            &device,
+            &queue,
+            dog_bytes,
+            "dog_texture"
+        ).expect("无法加载狗狗纹理");
         
         // Create depth texture
         let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
@@ -298,7 +310,8 @@ impl State {
         
         
         // Create models for the parking garage
-        let models = model::create_parking_garage(&device);
+        // 修改调用，传递引用
+        let models = model::create_parking_garage(&device, &dog_texture);
 
         
         // 创建墙体颜色 uniform 缓冲区
@@ -332,13 +345,57 @@ impl State {
             }
         );
 
-        // 创建渲染管线布局（移动到这里，并只创建一次）
+        // 在创建墙体颜色绑定组布局后添加
+        let texture_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            }
+        );
+        
+        // 创建纹理绑定组
+        let texture_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&dog_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&dog_texture.sampler),
+                    },
+                ],
+                label: Some("texture_bind_group"),
+            }
+        );
+
+        // 修改渲染管线布局，添加纹理绑定组布局
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &camera_bind_group_layout,
                     &wall_color_bind_group_layout,
+                    &texture_bind_group_layout, // 添加纹理绑定组布局
                 ],
                 push_constant_ranges: &[],
             }
@@ -420,6 +477,7 @@ impl State {
             wall_color, // 添加墙体颜色
             wall_color_bind_group,
             wall_color_buffer,
+            texture_bind_group, // 添加纹理绑定组
         }
     }
     
@@ -523,9 +581,11 @@ impl State {
                 }),
             });
             
+            // 在 render 方法中
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.wall_color_bind_group, &[]); // 设置墙体颜色绑定组
+            render_pass.set_bind_group(1, &self.wall_color_bind_group, &[]); 
+            render_pass.set_bind_group(2, &self.texture_bind_group, &[]); // 设置纹理绑定组
             
             // Render all models
             for model in &self.models {
