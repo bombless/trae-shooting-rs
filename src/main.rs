@@ -9,6 +9,7 @@ use std::thread;
 mod camera;
 mod texture;
 mod model;
+mod collision;
 
 // 添加颜色结构体
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
@@ -189,6 +190,7 @@ struct State {
     wall_color_buffer: wgpu::Buffer,
     wall_color_bind_group: wgpu::BindGroup,
     texture_bind_group: wgpu::BindGroup, // 添加纹理绑定组
+    wall_colliders: Vec<collision::WallCollider>, // 添加墙体碰撞器集合
 }
 
 impl State {
@@ -313,6 +315,62 @@ impl State {
         // Create models for the parking garage
         // 修改调用，传递引用
         let models = model::create_parking_garage(&device, &dog_texture);
+        
+        // 创建墙体碰撞器
+        let mut wall_colliders = Vec::new();
+        
+        // 定义停车场的尺寸（与model.rs中的create_parking_garage函数保持一致）
+        let garage_width = 30.0;
+        let garage_length = 40.0;
+        let wall_height = 4.0;
+        
+        // 前墙（入口处有缺口）
+        wall_colliders.push(collision::create_wall_collider(
+            [-garage_width/2.0, 0.0, -garage_length/2.0],
+            [-5.0, 0.0, -garage_length/2.0],
+            wall_height
+        ));
+        
+        wall_colliders.push(collision::create_wall_collider(
+            [5.0, 0.0, -garage_length/2.0],
+            [garage_width/2.0, 0.0, -garage_length/2.0],
+            wall_height
+        ));
+        
+        // 后墙
+        wall_colliders.push(collision::create_wall_collider(
+            [-garage_width/2.0, 0.0, garage_length/2.0],
+            [garage_width/2.0, 0.0, garage_length/2.0],
+            wall_height
+        ));
+        
+        // 左墙
+        wall_colliders.push(collision::create_wall_collider(
+            [-garage_width/2.0, 0.0, -garage_length/2.0],
+            [-garage_width/2.0, 0.0, garage_length/2.0],
+            wall_height
+        ));
+        
+        // 右墙
+        wall_colliders.push(collision::create_wall_collider(
+            [garage_width/2.0, 0.0, -garage_length/2.0],
+            [garage_width/2.0, 0.0, garage_length/2.0],
+            wall_height
+        ));
+        
+        // 内部墙体1
+        wall_colliders.push(collision::create_wall_collider(
+            [-10.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            wall_height
+        ));
+        
+        // 内部墙体2
+        wall_colliders.push(collision::create_wall_collider(
+            [0.0, 0.0, 5.0],
+            [0.0, 0.0, 15.0],
+            wall_height
+        ));
 
         
         // 创建墙体颜色 uniform 缓冲区
@@ -479,6 +537,7 @@ impl State {
             wall_color_bind_group,
             wall_color_buffer,
             texture_bind_group, // 添加纹理绑定组
+            wall_colliders, // 添加墙体碰撞器集合
         }
     }
     
@@ -523,7 +582,22 @@ impl State {
     }
     
     fn update(&mut self, dt: std::time::Duration) {
+        // 更新相机位置
         self.camera_controller.update_camera(&mut self.camera, dt);
+        
+        // 碰撞检测和响应
+        let player_radius = 0.5; // 玩家碰撞半径
+        let mut position = self.camera.position;
+        
+        // 对每个墙体进行碰撞检测
+        for collider in &self.wall_colliders {
+            position = collider.resolve_collision(position, player_radius);
+        }
+        
+        // 更新相机位置
+        self.camera.position = position;
+        
+        // 更新相机uniform
         self.camera_uniform.update_view_proj(&self.camera, self.config.width as f32 / self.config.height as f32);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
         
