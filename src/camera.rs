@@ -174,9 +174,15 @@ impl CameraController {
             EventType::AxisChanged(axis, value, _) => {
                 match axis {
                     Axis::LeftStickX => self.left_stick_x = *value,
-                    Axis::LeftStickY => self.left_stick_y = -*value, // Invert Y axis
-                    Axis::RightStickX => self.right_stick_x = *value * 0.05,
-                    Axis::RightStickY => self.right_stick_y = -*value * 0.05, // Invert Y axis
+                    Axis::LeftStickY => self.left_stick_y = *value,
+                    Axis::RightStickX => {
+                        let dx = *value;  // 将摇杆值转换为类似鼠标的增量
+                        self.right_stick_x = -dx * self.sensitivity * 0.7;
+                    },
+                    Axis::RightStickY => {
+                        let dy = *value;
+                        self.right_stick_y = dy * self.sensitivity * 0.7;
+                    },
                     _ => {},
                 }
             },
@@ -222,12 +228,12 @@ impl CameraController {
         }
         
         // Process mouse/controller right stick for camera rotation
-        camera.yaw += self.right_stick_x;
-        camera.pitch += self.right_stick_y;
+        camera.yaw += self.right_stick_x * self.sensitivity * dt * 2.0;
+        camera.pitch += self.right_stick_y * self.sensitivity * dt * 2.0;
         
-        // Reset stick values to prevent continuous rotation when not moving the mouse/stick
-        self.right_stick_x = 0.0;
-        self.right_stick_y = 0.0;
+        // 移除摇杆值重置的代码
+        // self.right_stick_x = 0.0;
+        // self.right_stick_y = 0.0;
         
         // Clamp pitch to avoid camera flipping
         camera.pitch = camera.pitch.clamp(-PI/2.0 + 0.1, PI/2.0 - 0.1);
