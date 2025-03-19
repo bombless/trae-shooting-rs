@@ -89,6 +89,7 @@ fn main() {
                             },
                             ..
                         } => {
+                            println!("toggle fullscreen");
                             // Toggle fullscreen state
                             state.is_fullscreen = !state.is_fullscreen;
                             
@@ -505,9 +506,9 @@ impl State {
                 },
                 ..                
             } => {
-                // Toggle fullscreen state
-                self.is_fullscreen = !self.is_fullscreen;
-                true
+                // Return true to indicate we've handled the F key press
+                // The actual fullscreen toggle is handled in the main event loop
+                false
             }
             _ => self.camera_controller.process_keyboard(event)
         }
