@@ -88,6 +88,8 @@ pub struct CameraController {
     left_stick_y: f32,
     right_stick_x: f32,
     right_stick_y: f32,
+    mouse_move_x: f32,
+    mouse_move_y: f32,
 }
 
 impl CameraController {
@@ -103,6 +105,8 @@ impl CameraController {
             left_stick_y: 0.0,
             right_stick_x: 0.0,
             right_stick_y: 0.0,
+            mouse_move_x: 0.0,
+            mouse_move_y: 0.0,
         }
     }
 
@@ -147,8 +151,8 @@ impl CameraController {
         let dy = dy as f32 * self.sensitivity;
         
         // Update camera rotation (yaw and pitch will be applied to the camera in update_camera)
-        self.right_stick_x = -dx * 0.01; // Invert X axis to fix reversed mouse direction
-        self.right_stick_y = -dy * 0.01; // Invert Y axis for intuitive control
+        self.mouse_move_x = -dx * 0.7; // Invert X axis to fix reversed mouse direction
+        self.mouse_move_y = -dy * 0.7; // Invert Y axis for intuitive control
     }
 
     pub fn process_controller(&mut self, _id: &GamepadId, event: &EventType) {
@@ -230,10 +234,11 @@ impl CameraController {
         // Process mouse/controller right stick for camera rotation
         camera.yaw += self.right_stick_x * self.sensitivity * dt * 2.0;
         camera.pitch += self.right_stick_y * self.sensitivity * dt * 2.0;
+        camera.yaw += self.mouse_move_x * self.sensitivity * dt * 2.0;
+        camera.pitch += self.mouse_move_y * self.sensitivity * dt * 2.0;
         
-        // 移除摇杆值重置的代码
-        // self.right_stick_x = 0.0;
-        // self.right_stick_y = 0.0;
+        self.mouse_move_x = 0.0;
+        self.mouse_move_y = 0.0;
         
         // Clamp pitch to avoid camera flipping
         camera.pitch = camera.pitch.clamp(-PI/2.0 + 0.1, PI/2.0 - 0.1);
