@@ -1,5 +1,5 @@
 use wgpu::util::DeviceExt;
-use glam::{Vec3, Mat4};
+use glam::Vec3;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -359,9 +359,8 @@ fn create_wall_edge(
     Model::new(device, "wall_edge", &vertices, &indices, [0.0, 0.0, 0.0], false, None)
 }
 
-// Create the entire parking garage
-// 修改函数签名，使用引用而不是所有权
-pub fn create_parking_garage(device: &wgpu::Device, dog_texture: &Texture) -> Vec<Model> {
+// Create the entire parking garage based on a 2D map
+pub fn create_parking_garage(device: &wgpu::Device, dog_texture: &Texture, map_data: &Vec<Vec<u8>>) -> (Vec<Model>, Vec<Vec<u8>>) {
     let mut models = Vec::new();
     
     // Define colors
@@ -371,11 +370,35 @@ pub fn create_parking_garage(device: &wgpu::Device, dog_texture: &Texture) -> Ve
     let ceiling_color2 = [1.0, 1.0, 1.0]; // White
     let wall_color = [1.0, 1.0, 1.0]; // Pure white
     
+    // 如果没有提供地图数据，创建默认地图
+    let map = if map_data.is_empty() {
+        create_default_map()
+    } else {
+        map_data.clone()
+    };
+    
+    // 计算地图尺寸
+    let map_height = map.len();
+    let map_width = if map_height > 0 { map[0].len() } else { 0 };
+    
+    // 设置地图比例尺（每个单元格对应的游戏世界单位）
+    let cell_size = 2.0;
+    let wall_height = 4.0;
+    let wall_thickness = 0.3;
+    
+    // 计算地图的总尺寸
+    let garage_width = map_width as f32 * cell_size;
+    let garage_length = map_height as f32 * cell_size;
+    
+    // 计算地图原点在游戏世界中的位置（使地图居中）
+    let origin_x = -garage_width / 2.0;
+    let origin_z = -garage_length / 2.0;
+    
     // Create floor (black and white checkerboard)
     let floor = create_checkerboard(
         device,
         "floor",
-        50.0, // size
+        garage_width.max(50.0), // 使用地图尺寸或最小尺寸50.0
         2.0,  // tile size
         0.0,  // height (at ground level)
         floor_color1,
@@ -388,160 +411,156 @@ pub fn create_parking_garage(device: &wgpu::Device, dog_texture: &Texture) -> Ve
     let ceiling = create_checkerboard(
         device,
         "ceiling",
-        50.0, // size
+        garage_width.max(50.0), // 使用地图尺寸或最小尺寸50.0
         2.0,  // tile size
-        4.0,  // height (ceiling height)
+        wall_height,  // height (ceiling height)
         ceiling_color1,
         ceiling_color2,
         true
     );
     models.push(ceiling);
     
-    // Create walls for a rectangular parking garage
-    let garage_width = 30.0;
-    let garage_length = 40.0;
-    let wall_height = 4.0;
+    // 根据地图数据创建墙体
+    for y in 0..map_height {
+        for x in 0..map_width {
+            // 如果当前单元格是墙体
+            if map[y][x] == 1 {
+                // 计算墙体在游戏世界中的位置
+                let wall_x = origin_x + x as f32 * cell_size;
+                let wall_z = origin_z + y as f32 * cell_size;
+                
+                // 检查四个方向，如果相邻单元格不是墙体，则创建墙体
+                
+                // 上方（北）
+                if y == 0 || map[y-1][x] == 0 {
+                    let start = [wall_x, 0.0, wall_z];
+                    let end = [wall_x + cell_size, 0.0, wall_z];
+                    
+                    let wall = create_wall(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_color,
+                    );
+                    models.push(wall);
+                    
+                    let edge = create_wall_edge(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_thickness,
+                    );
+                    models.push(edge);
+                }
+                
+                // 下方（南）
+                if y == map_height - 1 || map[y+1][x] == 0 {
+                    let start = [wall_x, 0.0, wall_z + cell_size];
+                    let end = [wall_x + cell_size, 0.0, wall_z + cell_size];
+                    
+                    let wall = create_wall(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_color,
+                    );
+                    models.push(wall);
+                    
+                    let edge = create_wall_edge(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_thickness,
+                    );
+                    models.push(edge);
+                }
+                
+                // 左方（西）
+                if x == 0 || map[y][x-1] == 0 {
+                    let start = [wall_x, 0.0, wall_z];
+                    let end = [wall_x, 0.0, wall_z + cell_size];
+                    
+                    let wall = create_wall(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_color,
+                    );
+                    models.push(wall);
+                    
+                    let edge = create_wall_edge(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_thickness,
+                    );
+                    models.push(edge);
+                }
+                
+                // 右方（东）
+                if x == map_width - 1 || map[y][x+1] == 0 {
+                    let start = [wall_x + cell_size, 0.0, wall_z];
+                    let end = [wall_x + cell_size, 0.0, wall_z + cell_size];
+                    
+                    let wall = create_wall(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_color,
+                    );
+                    models.push(wall);
+                    
+                    let edge = create_wall_edge(
+                        device,
+                        start,
+                        end,
+                        wall_height,
+                        wall_thickness,
+                    );
+                    models.push(edge);
+                }
+            }
+        }
+    }
     
-    // Define wall thickness for edge creation
-    let wall_thickness = 0.3;
+    (models, map)
+}
+
+// 创建默认地图数据
+pub fn create_default_map() -> Vec<Vec<u8>> {
+    // 创建一个20x15的地图
+    let mut map = vec![vec![0; 20]; 15];
     
-    // Front wall (with a gap for entrance)
-    let front_wall1 = create_wall(
-        device,
-        [-garage_width/2.0, 0.0, -garage_length/2.0],
-        [-5.0, 0.0, -garage_length/2.0],
-        wall_height,
-        wall_color,
-    );
-    models.push(front_wall1);
+    // 设置外墙
+    for x in 0..20 {
+        map[0][x] = 1;  // 上边界
+        map[14][x] = 1; // 下边界
+    }
     
-    // Add black edge to front wall 1
-    let front_edge1 = create_wall_edge(
-        device,
-        [-garage_width/2.0, 0.0, -garage_length/2.0],
-        [-5.0, 0.0, -garage_length/2.0],
-        wall_height,
-        wall_thickness,
-    );
-    models.push(front_edge1);
+    for y in 0..15 {
+        map[y][0] = 1;  // 左边界
+        map[y][19] = 1; // 右边界
+    }
     
-    let front_wall2 = create_wall(
-        device,
-        [5.0, 0.0, -garage_length/2.0],
-        [garage_width/2.0, 0.0, -garage_length/2.0],
-        wall_height,
-        wall_color,
-    );
-    models.push(front_wall2);
+    // 设置入口（在上边界中间留出空隙）
+    map[0][9] = 0;
+    map[0][10] = 0;
     
-    // Add black edge to front wall 2
-    let front_edge2 = create_wall_edge(
-        device,
-        [5.0, 0.0, -garage_length/2.0],
-        [garage_width/2.0, 0.0, -garage_length/2.0],
-        wall_height,
-        wall_thickness,
-    );
-    models.push(front_edge2);
+    // 添加一些内部墙体
+    for x in 5..15 {
+        map[7][x] = 1; // 水平墙
+    }
     
-    // Back wall
-    let back_wall = create_wall(
-        device,
-        [-garage_width/2.0, 0.0, garage_length/2.0],
-        [garage_width/2.0, 0.0, garage_length/2.0],
-        wall_height,
-        wall_color,
-    );
-    models.push(back_wall);
+    for y in 3..12 {
+        map[y][5] = 1; // 垂直墙
+    }
     
-    // Add black edge to back wall
-    let back_edge = create_wall_edge(
-        device,
-        [-garage_width/2.0, 0.0, garage_length/2.0],
-        [garage_width/2.0, 0.0, garage_length/2.0],
-        wall_height,
-        wall_thickness,
-    );
-    models.push(back_edge);
-    
-    // Left wall
-    let left_wall = create_wall(
-        device,
-        [-garage_width/2.0, 0.0, -garage_length/2.0],
-        [-garage_width/2.0, 0.0, garage_length/2.0],
-        wall_height,
-        wall_color,
-    );
-    models.push(left_wall);
-    
-    // Add black edge to left wall
-    let left_edge = create_wall_edge(
-        device,
-        [-garage_width/2.0, 0.0, -garage_length/2.0],
-        [-garage_width/2.0, 0.0, garage_length/2.0],
-        wall_height,
-        wall_thickness,
-    );
-    models.push(left_edge);
-    
-    // Right wall
-    let right_wall = create_wall(
-        device,
-        [garage_width/2.0, 0.0, -garage_length/2.0],
-        [garage_width/2.0, 0.0, garage_length/2.0],
-        wall_height,
-        wall_color,
-    );
-    models.push(right_wall);
-    
-    // Add black edge to right wall
-    let right_edge = create_wall_edge(
-        device,
-        [garage_width/2.0, 0.0, -garage_length/2.0],
-        [garage_width/2.0, 0.0, garage_length/2.0],
-        wall_height,
-        wall_thickness,
-    );
-    models.push(right_edge);
-    
-    // Add some interior walls to make it more interesting
-    let interior_wall1 = create_wall(
-        device,
-        [-10.0, 0.0, 0.0],
-        [10.0, 0.0, 0.0],
-        wall_height,
-        wall_color,
-    );
-    models.push(interior_wall1);
-    
-    // Add black edge to interior wall 1
-    let interior_edge1 = create_wall_edge(
-        device,
-        [-10.0, 0.0, 0.0],
-        [10.0, 0.0, 0.0],
-        wall_height,
-        wall_thickness,
-    );
-    models.push(interior_edge1);
-    
-    let interior_wall2 = create_wall(
-        device,
-        [0.0, 0.0, 5.0],
-        [0.0, 0.0, 15.0],
-        wall_height,
-        wall_color,
-    );
-    models.push(interior_wall2);
-    
-    // Add black edge to interior wall 2
-    let interior_edge2 = create_wall_edge(
-        device,
-        [0.0, 0.0, 5.0],
-        [0.0, 0.0, 15.0],
-        wall_height,
-        wall_thickness,
-    );
-    models.push(interior_edge2);
-    
-    models
+    map
 }

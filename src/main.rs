@@ -171,6 +171,8 @@ fn start_http_server(wall_color: Arc<Mutex<Color>>) {
 }
 
 // 在 State 结构体中添加墙体颜色的缓冲区和绑定组
+mod minimap;
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -178,6 +180,7 @@ struct State {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
+    minimap_pipeline: wgpu::RenderPipeline, // 添加小地图渲染管线
     camera: camera::Camera,
     camera_controller: camera::CameraController,
     camera_uniform: camera::CameraUniform,
@@ -191,12 +194,21 @@ struct State {
     wall_color_bind_group: wgpu::BindGroup,
     texture_bind_group: wgpu::BindGroup, // 添加纹理绑定组
     wall_colliders: Vec<collision::WallCollider>, // 添加墙体碰撞器集合
+    map_data: Vec<Vec<u8>>, // 添加地图数据
+    minimap: minimap::Minimap, // 添加小地图
+    minimap_vertex_buffer: wgpu::Buffer, // 小地图顶点缓冲区
+    minimap_index_buffer: wgpu::Buffer, // 小地图索引缓冲区
+    minimap_indices_len: u32, // 小地图索引数量
+    minimap_bind_group: wgpu::BindGroup, // 小地图绑定组
 }
 
 impl State {
     async fn new(window: &Window, wall_color: Arc<Mutex<Color>>) -> Self {
 
         let size = window.inner_size();
+        
+        // 创建默认地图数据
+        let map_data = model::create_default_map();
         
         // Instance is a handle to the GPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -312,9 +324,9 @@ impl State {
         });
         
         
-        // Create models for the parking garage
-        // 修改调用，传递引用
-        let models = model::create_parking_garage(&device, &dog_texture);
+        // Create models for the parking garage based on map data
+        // 修改调用，传递地图数据并接收返回的模型和地图
+        let (models, map_data) = model::create_parking_garage(&device, &dog_texture, &map_data);
         
         // 创建墙体碰撞器
         let mut wall_colliders = Vec::new();
@@ -515,8 +527,151 @@ impl State {
                 label: Some("wall_color_bind_group"),
             }
         );
-
-        // 删除第二次创建的 render_pipeline_layout
+        
+        // 创建小地图
+        let minimap_size = 256; // 小地图纹理大小
+        let minimap = minimap::Minimap::new(
+            &device,
+            &queue,
+            &map_data,
+            minimap_size,
+            2.0, // 比例尺
+            [20.0, 20.0], // 位置（左上角）
+            [150.0, 150.0], // 尺寸
+        );
+        
+        // 创建小地图顶点和索引缓冲区
+        let (minimap_vertex_buffer, minimap_index_buffer, minimap_indices_len) = 
+            minimap.create_vertices_and_indices(&device, size.width, size.height);
+        
+        // 创建小地图绑定组布局
+        let minimap_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("minimap_bind_group_layout"),
+            }
+        );
+        
+        // 创建小地图绑定组
+        let minimap_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &minimap_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&minimap.texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&minimap.texture.sampler),
+                    },
+                ],
+                label: Some("minimap_bind_group"),
+            }
+        );
+        
+        // 创建小地图渲染管线布局
+        let minimap_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("Minimap Pipeline Layout"),
+                bind_group_layouts: &[&camera_bind_group_layout, &wall_color_bind_group_layout, &minimap_bind_group_layout],
+                push_constant_ranges: &[],
+            }
+        );
+        
+        // 创建小地图渲染管线
+        let minimap_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Minimap Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+        
+        let minimap_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Minimap Pipeline"),
+            layout: Some(&minimap_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &minimap_shader,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                    ],
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &minimap_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
 
         Self {
             surface,
@@ -525,6 +680,7 @@ impl State {
             config,
             size,
             render_pipeline,
+            minimap_pipeline,
             camera,
             camera_controller,
             camera_uniform,
@@ -538,6 +694,12 @@ impl State {
             wall_color_buffer,
             texture_bind_group, // 添加纹理绑定组
             wall_colliders, // 添加墙体碰撞器集合
+            map_data, // 添加地图数据
+            minimap, // 添加小地图
+            minimap_vertex_buffer, // 小地图顶点缓冲区
+            minimap_index_buffer, // 小地图索引缓冲区
+            minimap_indices_len, // 小地图索引数量
+            minimap_bind_group, // 小地图绑定组
         }
     }
     
@@ -596,6 +758,20 @@ impl State {
         
         // 更新相机位置
         self.camera.position = position;
+        
+        // 更新小地图上的玩家位置
+        let garage_width = self.map_data[0].len() as f32 * 2.0; // 每个单元格2.0单位
+        let garage_length = self.map_data.len() as f32 * 2.0;
+        let origin_x = -garage_width / 2.0;
+        let origin_z = -garage_length / 2.0;
+        
+        self.minimap.update_player_position(
+            &self.queue,
+            self.camera.position,
+            &self.map_data,
+            2.0, // 地图比例尺
+            [origin_x, origin_z], // 地图原点偏移
+        );
         
         // 更新相机uniform
         self.camera_uniform.update_view_proj(&self.camera, self.config.width as f32 / self.config.height as f32);
