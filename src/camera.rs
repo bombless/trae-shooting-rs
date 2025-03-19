@@ -90,6 +90,9 @@ pub struct CameraController {
     right_stick_y: f32,
     mouse_move_x: f32,
     mouse_move_y: f32,
+    is_jumping: bool,     // 添加跳跃状态
+    velocity_y: f32,      // 垂直速度
+    ground_level: f32,    // 地面高度
 }
 
 impl CameraController {
@@ -107,6 +110,9 @@ impl CameraController {
             right_stick_y: 0.0,
             mouse_move_x: 0.0,
             mouse_move_y: 0.0,
+            is_jumping: false,
+            velocity_y: 0.0,
+            ground_level: 1.8,
         }
     }
 
@@ -138,6 +144,13 @@ impl CameraController {
                         self.right = is_pressed;
                         true
                     }
+                    VirtualKeyCode::Space => {
+                        if is_pressed && !self.is_jumping {
+                            self.is_jumping = true;
+                            self.velocity_y = 8.0; // 初始跳跃速度
+                        }
+                        true
+                    }
                     _ => false,
                 }
             }
@@ -163,6 +176,12 @@ impl CameraController {
                     Button::DPadDown => self.backward = true,
                     Button::DPadLeft => self.left = true,
                     Button::DPadRight => self.right = true,
+                    Button::South => {
+                        if !self.is_jumping {
+                            self.is_jumping = true;
+                            self.velocity_y = 8.0; // 初始跳跃速度
+                        }
+                    },
                     _ => {},
                 }
             },
@@ -197,6 +216,19 @@ impl CameraController {
     pub fn update_camera(&mut self, camera: &mut Camera, dt: Duration) {
         // Convert duration to seconds for smooth movement
         let dt = dt.as_secs_f32();
+        
+        // 处理跳跃物理
+        if self.is_jumping {
+            self.velocity_y -= 20.0 * dt; // 重力加速度
+            camera.position.y += self.velocity_y * dt;
+            
+            // 检查是否落地
+            if camera.position.y <= self.ground_level {
+                camera.position.y = self.ground_level;
+                self.is_jumping = false;
+                self.velocity_y = 0.0;
+            }
+        }
         
         // Calculate forward and right vectors based on camera's current orientation
         let forward = Vec3::new(
