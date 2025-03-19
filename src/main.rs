@@ -328,61 +328,86 @@ impl State {
         // 修改调用，传递地图数据并接收返回的模型和地图
         let (models, map_data) = model::create_parking_garage(&device, &dog_texture, &map_data);
         
-        // 创建墙体碰撞器
+        // 创建墙体碰撞器，基于地图数据生成
         let mut wall_colliders = Vec::new();
         
         // 定义停车场的尺寸（与model.rs中的create_parking_garage函数保持一致）
-        let garage_width = 30.0;
-        let garage_length = 40.0;
         let wall_height = 4.0;
+        let cell_size = 2.0;
         
-        // 前墙（入口处有缺口）
-        wall_colliders.push(collision::create_wall_collider(
-            [-garage_width/2.0, 0.0, -garage_length/2.0],
-            [-5.0, 0.0, -garage_length/2.0],
-            wall_height
-        ));
+        // 计算地图尺寸
+        let map_height = map_data.len();
+        let map_width = if map_height > 0 { map_data[0].len() } else { 0 };
         
-        wall_colliders.push(collision::create_wall_collider(
-            [5.0, 0.0, -garage_length/2.0],
-            [garage_width/2.0, 0.0, -garage_length/2.0],
-            wall_height
-        ));
+        // 计算地图的总尺寸
+        let garage_width = map_width as f32 * cell_size;
+        let garage_length = map_height as f32 * cell_size;
         
-        // 后墙
-        wall_colliders.push(collision::create_wall_collider(
-            [-garage_width/2.0, 0.0, garage_length/2.0],
-            [garage_width/2.0, 0.0, garage_length/2.0],
-            wall_height
-        ));
+        // 计算地图原点在游戏世界中的位置（使地图居中）
+        let origin_x = -garage_width / 2.0;
+        let origin_z = -garage_length / 2.0;
         
-        // 左墙
-        wall_colliders.push(collision::create_wall_collider(
-            [-garage_width/2.0, 0.0, -garage_length/2.0],
-            [-garage_width/2.0, 0.0, garage_length/2.0],
-            wall_height
-        ));
-        
-        // 右墙
-        wall_colliders.push(collision::create_wall_collider(
-            [garage_width/2.0, 0.0, -garage_length/2.0],
-            [garage_width/2.0, 0.0, garage_length/2.0],
-            wall_height
-        ));
-        
-        // 内部墙体1
-        wall_colliders.push(collision::create_wall_collider(
-            [-10.0, 0.0, 0.0],
-            [10.0, 0.0, 0.0],
-            wall_height
-        ));
-        
-        // 内部墙体2
-        wall_colliders.push(collision::create_wall_collider(
-            [0.0, 0.0, 5.0],
-            [0.0, 0.0, 15.0],
-            wall_height
-        ));
+        // 根据地图数据创建墙体碰撞器
+        for y in 0..map_height {
+            for x in 0..map_width {
+                // 如果当前单元格是墙体
+                if map_data[y][x] == 1 {
+                    // 计算墙体在游戏世界中的位置
+                    let wall_x = origin_x + x as f32 * cell_size;
+                    let wall_z = origin_z + y as f32 * cell_size;
+                    
+                    // 检查四个方向，如果相邻单元格不是墙体，则创建墙体碰撞器
+                    
+                    // 上方（北）
+                    if y == 0 || map_data[y-1][x] == 0 {
+                        let start = [wall_x, 0.0, wall_z];
+                        let end = [wall_x + cell_size, 0.0, wall_z];
+                        
+                        wall_colliders.push(collision::create_wall_collider(
+                            start,
+                            end,
+                            wall_height
+                        ));
+                    }
+                    
+                    // 下方（南）
+                    if y == map_height - 1 || map_data[y+1][x] == 0 {
+                        let start = [wall_x, 0.0, wall_z + cell_size];
+                        let end = [wall_x + cell_size, 0.0, wall_z + cell_size];
+                        
+                        wall_colliders.push(collision::create_wall_collider(
+                            start,
+                            end,
+                            wall_height
+                        ));
+                    }
+                    
+                    // 左方（西）
+                    if x == 0 || map_data[y][x-1] == 0 {
+                        let start = [wall_x, 0.0, wall_z];
+                        let end = [wall_x, 0.0, wall_z + cell_size];
+                        
+                        wall_colliders.push(collision::create_wall_collider(
+                            start,
+                            end,
+                            wall_height
+                        ));
+                    }
+                    
+                    // 右方（东）
+                    if x == map_width - 1 || map_data[y][x+1] == 0 {
+                        let start = [wall_x + cell_size, 0.0, wall_z];
+                        let end = [wall_x + cell_size, 0.0, wall_z + cell_size];
+                        
+                        wall_colliders.push(collision::create_wall_collider(
+                            start,
+                            end,
+                            wall_height
+                        ));
+                    }
+                }
+            }
+        }
 
         
         // 创建墙体颜色 uniform 缓冲区
@@ -499,13 +524,7 @@ impl State {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -536,8 +555,8 @@ impl State {
             &map_data,
             minimap_size,
             2.0, // 比例尺
-            [20.0, 20.0], // 位置（左上角）
-            [150.0, 150.0], // 尺寸
+            [10.0, 10.0], // 位置（左上角）
+            [200.0, 200.0], // 尺寸
         );
         
         // 创建小地图顶点和索引缓冲区
@@ -587,19 +606,19 @@ impl State {
             }
         );
         
-        // 创建小地图渲染管线布局
+        // 创建小地图渲染管线布局 - 使用专门的UI布局
         let minimap_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Minimap Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &wall_color_bind_group_layout, &minimap_bind_group_layout],
+                bind_group_layouts: &[&minimap_bind_group_layout], // 只需要小地图纹理绑定组
                 push_constant_ranges: &[],
             }
         );
         
-        // 创建小地图渲染管线
+        // 创建小地图渲染管线 - 使用专门的UI着色器
         let minimap_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Minimap Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            label: Some("UI Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("ui_shader.wgsl").into()),
         });
         
         let minimap_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -608,32 +627,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &minimap_shader,
                 entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            offset: 0,
-                            shader_location: 0,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                            shader_location: 1,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: std::mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
-                            shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                            shader_location: 3,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                    ],
-                }],
+                buffers: &[minimap::Minimap::vertex_buffer_layout()], // 使用小地图提供的顶点布局
             },
             fragment: Some(wgpu::FragmentState {
                 module: &minimap_shader,
@@ -714,6 +708,13 @@ impl State {
                 &self.config,
                 "depth_texture"
             );
+            
+            // 更新小地图的顶点和索引缓冲区
+            let (vertex_buffer, index_buffer, indices_len) = 
+                self.minimap.create_vertices_and_indices(&self.device, new_size.width, new_size.height);
+            self.minimap_vertex_buffer = vertex_buffer;
+            self.minimap_index_buffer = index_buffer;
+            self.minimap_indices_len = indices_len;
         }
     }
     
@@ -806,6 +807,7 @@ impl State {
             label: Some("Render Encoder"),
         });
         
+        // 渲染3D场景
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -832,7 +834,6 @@ impl State {
                 }),
             });
             
-            // 在 render 方法中
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.wall_color_bind_group, &[]); 
@@ -842,6 +843,34 @@ impl State {
             for model in &self.models {
                 model.draw(&mut render_pass);
             }
+        }
+        
+        // 渲染小地图（2D UI）
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Minimap Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // 使用Load操作，保留之前的渲染结果
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None, // 2D UI不需要深度测试
+            });
+            
+            // 设置小地图渲染管线和绑定组 - 使用新的UI渲染管线
+            render_pass.set_pipeline(&self.minimap_pipeline);
+            // 只需要设置小地图纹理绑定组
+            render_pass.set_bind_group(0, &self.minimap_bind_group, &[]);
+            
+            // 设置小地图顶点和索引缓冲区
+            render_pass.set_vertex_buffer(0, self.minimap_vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.minimap_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            
+            // 绘制小地图
+            render_pass.draw_indexed(0..self.minimap_indices_len, 0, 0..1);
         }
         
         self.queue.submit(std::iter::once(encoder.finish()));

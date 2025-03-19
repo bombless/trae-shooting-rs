@@ -191,14 +191,14 @@ impl Minimap {
         let player_map_z = (player_position.z - map_offset[1]) / map_scale;
         
         let player_pixel_x = (player_map_x * scale_x) as u32;
-        let player_pixel_z = (player_map_z * scale_y) as u32;
+        let player_pixel_y = (player_map_z * scale_y) as u32; // 使用y坐标命名，保持一致性
         
         // 在小地图上绘制玩家标记（红点）
-        let marker_size = 3u32; // 标记大小
+        let marker_size = 5u32; // 增大标记大小，使其更明显
         for dy in 0..marker_size {
             for dx in 0..marker_size {
                 let px = player_pixel_x + dx - marker_size / 2;
-                let py = player_pixel_z + dy - marker_size / 2;
+                let py = player_pixel_y + dy - marker_size / 2;
                 if px < self.size && py < self.size {
                     img.put_pixel(px, py, Rgba(self.player_marker_color));
                 }
@@ -231,7 +231,7 @@ impl Minimap {
         );
     }
     
-    // 创建小地图的顶点和索引缓冲区
+    // 创建小地图的顶点和索引缓冲区 - 为2D UI渲染优化
     pub fn create_vertices_and_indices(
         &self,
         device: &wgpu::Device,
@@ -250,7 +250,7 @@ impl Minimap {
         let top = 1.0 - 2.0 * y / screen_height as f32;
         let bottom = 1.0 - 2.0 * (y + height) / screen_height as f32;
         
-        // 创建顶点数据
+        // 创建顶点数据 - 简化为仅包含位置和纹理坐标
         #[repr(C)]
         #[derive(Copy, Clone, Debug)]
         struct Vertex {
@@ -287,5 +287,25 @@ impl Minimap {
         );
         
         (vertex_buffer, index_buffer, indices.len() as u32)
+    }
+    
+    // 返回顶点缓冲区布局描述 - 为UI着色器提供
+    pub fn vertex_buffer_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress, // 3个位置 + 2个纹理坐标
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        }
     }
 }
