@@ -275,7 +275,6 @@ fn create_wall_edge(
     
     // Define edge thickness (slightly larger than the wall)
     let edge_thickness = 0.05; // 5cm thickness for the edge
-    let edge_offset = 0.02; // 2cm offset to make edges visible from all angles
     
     // Calculate wall direction and length
     let dx = end[0] - start[0];
@@ -286,23 +285,17 @@ fn create_wall_edge(
     let nx = -dz / length;
     let nz = dx / length;
     
-    // Calculate tangent vector (along the wall)
-    let tx = dx / length;
-    let tz = dz / length;
-    
     // Black color for all edges
     let color = [0.0, 0.0, 0.0];
     
-    // Create vertices for the vertical edges (4 corners)
-    
-    // Front-left vertical edge - make it protrude in all directions
+    // Front-left vertical edge
     let fl_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [start[0] - edge_thickness - tx * edge_offset, 0.0, start[2] - edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + edge_thickness - tx * edge_offset, 0.0, start[2] + edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + edge_thickness - tx * edge_offset, height, start[2] + edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] - edge_thickness - tx * edge_offset, height, start[2] - edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0], 0.0, start[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0] - edge_thickness, 0.0, start[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0] - edge_thickness, height, start[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0], height, start[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
     
-    // Add indices for the front-left vertical edge - ensure correct winding order for visibility
+    // Add indices for the front-left vertical edge
     indices.push(fl_base_idx);
     indices.push(fl_base_idx + 1);
     indices.push(fl_base_idx + 2);
@@ -310,14 +303,14 @@ fn create_wall_edge(
     indices.push(fl_base_idx + 2);
     indices.push(fl_base_idx + 3);
     
-    // Front-right vertical edge - make it protrude in all directions
+    // Front-right vertical edge
     let fr_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [end[0] - edge_thickness + tx * edge_offset, 0.0, end[2] - edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + edge_thickness + tx * edge_offset, 0.0, end[2] + edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + edge_thickness + tx * edge_offset, height, end[2] + edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] - edge_thickness + tx * edge_offset, height, end[2] - edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0], 0.0, end[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0] + edge_thickness, 0.0, end[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0] + edge_thickness, height, end[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0], height, end[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
     
-    // Add indices for the front-right vertical edge - ensure correct winding order for visibility
+    // Add indices for the front-right vertical edge
     indices.push(fr_base_idx);
     indices.push(fr_base_idx + 1);
     indices.push(fr_base_idx + 2);
@@ -325,14 +318,14 @@ fn create_wall_edge(
     indices.push(fr_base_idx + 2);
     indices.push(fr_base_idx + 3);
     
-    // Back-left vertical edge (for walls with thickness) - make it protrude in all directions
+    // Back-left vertical edge (for walls with thickness)
     let bl_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness - tx * edge_offset, 0.0, start[2] + nz * wall_thickness - edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness + edge_thickness - tx * edge_offset, 0.0, start[2] + nz * wall_thickness + edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness + edge_thickness - tx * edge_offset, height, start[2] + nz * wall_thickness + edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness - tx * edge_offset, height, start[2] + nz * wall_thickness - edge_thickness - tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness, 0.0, start[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness, 0.0, start[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness, height, start[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness, height, start[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
     
-    // Add indices for the back-left vertical edge - ensure correct winding order for visibility
+    // Add indices for the back-left vertical edge
     indices.push(bl_base_idx);
     indices.push(bl_base_idx + 1);
     indices.push(bl_base_idx + 2);
@@ -340,14 +333,13 @@ fn create_wall_edge(
     indices.push(bl_base_idx + 2);
     indices.push(bl_base_idx + 3);
     
-    // Back-right vertical edge (for walls with thickness) - make it protrude in all directions
+    // Back-right vertical edge (for walls with thickness)
     let br_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness - edge_thickness + tx * edge_offset, 0.0, end[2] + nz * wall_thickness - edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness + tx * edge_offset, 0.0, end[2] + nz * wall_thickness + edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness + tx * edge_offset, height, end[2] + nz * wall_thickness + edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness - edge_thickness + tx * edge_offset, height, end[2] + nz * wall_thickness - edge_thickness + tz * edge_offset], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness, 0.0, end[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness, 0.0, end[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness, height, end[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness, height, end[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
     
-    // 在 create_wall_edge 函数末尾添加缺少的索引
     // Add indices for the back-right vertical edge
     indices.push(br_base_idx);
     indices.push(br_base_idx + 1);
