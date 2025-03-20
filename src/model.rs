@@ -1,5 +1,5 @@
 use wgpu::util::DeviceExt;
-use glam::Vec3;
+// use glam::Vec3; - 不需要，已在main.rs中导入
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -262,7 +262,7 @@ fn create_wall(
     Model::new(device, "wall", &vertices, &indices, [0.5, 0.5, 0.5], true, None)
 }
 
-// Create a wall edge (black outline)
+// Create a wall edge (black outline) as a cylinder
 fn create_wall_edge(
     device: &wgpu::Device,
     start: [f32; 3],
@@ -273,8 +273,50 @@ fn create_wall_edge(
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     
-    // Define edge thickness (slightly larger than the wall)
-    let edge_thickness = 0.05; // 5cm thickness for the edge
+    // Define cylinder parameters
+    let radius = 0.025; // 2.5cm radius for the cylinder (thinner than before)
+    let segments = 8; // Number of segments in the cylinder (can adjust for smoother/rougher)
+    
+    // Black color for all edges
+    let color = [0.0, 0.0, 0.0];
+    
+    // Helper function to create a cylinder
+    let mut create_cylinder = |base_x: f32, base_z: f32| {
+        let base_idx = vertices.len() as u16;
+        
+        // Create vertices for top and bottom circles
+        for y in [0.0, height] {
+            for i in 0..=segments {
+                let angle = std::f32::consts::PI * 2.0 * (i as f32) / (segments as f32);
+                let x = base_x + radius * angle.cos();
+                let z = base_z + radius * angle.sin();
+                vertices.push(ModelVertex {
+                    position: [x, y, z],
+                    color,
+                    model_type: 0.0,
+                    tex_coords: [i as f32 / segments as f32, if y == 0.0 { 1.0 } else { 0.0 }],
+                });
+            }
+        }
+        
+        // Create indices for the cylinder wall
+        for i in 0..segments {
+            let top_start = base_idx + (segments + 1) + i;
+            let top_end = base_idx + (segments + 1) + i + 1;
+            let bottom_start = base_idx + i;
+            let bottom_end = base_idx + i + 1;
+            
+            // First triangle
+            indices.push(bottom_start);
+            indices.push(top_start);
+            indices.push(bottom_end);
+            
+            // Second triangle
+            indices.push(bottom_end);
+            indices.push(top_start);
+            indices.push(top_end);
+        }
+    };
     
     // Calculate wall direction and length
     let dx = end[0] - start[0];
@@ -285,74 +327,30 @@ fn create_wall_edge(
     let nx = -dz / length;
     let nz = dx / length;
     
-    // Black color for all edges
-    let color = [0.0, 0.0, 0.0];
+    // Create cylinders at each corner
+    // Front-left corner
+    create_cylinder(start[0], start[2]);
     
-    // Front-left vertical edge
-    let fl_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [start[0], 0.0, start[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] - edge_thickness, 0.0, start[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] - edge_thickness, height, start[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0], height, start[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
+    // Front-right corner
+    create_cylinder(end[0], end[2]);
     
-    // Add indices for the front-left vertical edge
-    indices.push(fl_base_idx);
-    indices.push(fl_base_idx + 1);
-    indices.push(fl_base_idx + 2);
-    indices.push(fl_base_idx);
-    indices.push(fl_base_idx + 2);
-    indices.push(fl_base_idx + 3);
+    // Back-left corner
+    create_cylinder(
+        start[0] + nx * wall_thickness,
+        start[2] + nz * wall_thickness
+    );
     
-    // Front-right vertical edge
-    let fr_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [end[0], 0.0, end[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + edge_thickness, 0.0, end[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + edge_thickness, height, end[2] - edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0], height, end[2]], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    
-    // Add indices for the front-right vertical edge
-    indices.push(fr_base_idx);
-    indices.push(fr_base_idx + 1);
-    indices.push(fr_base_idx + 2);
-    indices.push(fr_base_idx);
-    indices.push(fr_base_idx + 2);
-    indices.push(fr_base_idx + 3);
-    
-    // Back-left vertical edge (for walls with thickness)
-    let bl_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness, 0.0, start[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness, 0.0, start[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness - edge_thickness, height, start[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [start[0] + nx * wall_thickness, height, start[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    
-    // Add indices for the back-left vertical edge
-    indices.push(bl_base_idx);
-    indices.push(bl_base_idx + 1);
-    indices.push(bl_base_idx + 2);
-    indices.push(bl_base_idx);
-    indices.push(bl_base_idx + 2);
-    indices.push(bl_base_idx + 3);
-    
-    // Back-right vertical edge (for walls with thickness)
-    let br_base_idx = vertices.len() as u16;
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness, 0.0, end[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness, 0.0, end[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness + edge_thickness, height, end[2] + nz * wall_thickness + edge_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    vertices.push(ModelVertex { position: [end[0] + nx * wall_thickness, height, end[2] + nz * wall_thickness], color, model_type: 0.0, tex_coords: [0.0, 0.0] });
-    
-    // Add indices for the back-right vertical edge
-    indices.push(br_base_idx);
-    indices.push(br_base_idx + 1);
-    indices.push(br_base_idx + 2);
-    indices.push(br_base_idx);
-    indices.push(br_base_idx + 2);
-    indices.push(br_base_idx + 3);
+    // Back-right corner
+    create_cylinder(
+        end[0] + nx * wall_thickness,
+        end[2] + nz * wall_thickness
+    );
     
     Model::new(device, "wall_edge", &vertices, &indices, [0.0, 0.0, 0.0], false, None)
 }
 
 // Create the entire parking garage based on a 2D map
-pub fn create_parking_garage(device: &wgpu::Device, dog_texture: &Texture, map_data: &Vec<Vec<u8>>) -> (Vec<Model>, Vec<Vec<u8>>) {
+pub fn create_parking_garage(device: &wgpu::Device, _dog_texture: &Texture, map_data: &Vec<Vec<u8>>) -> (Vec<Model>, Vec<Vec<u8>>) {
     let mut models = Vec::new();
     
     // Define colors
