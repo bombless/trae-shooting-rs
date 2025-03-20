@@ -195,13 +195,20 @@ impl Minimap {
         
         // 在小地图上绘制玩家标记（红点）
         let marker_size = 5u32; // 增大标记大小，使其更明显
-        for dy in 0..marker_size {
-            for dx in 0..marker_size {
-                let px = player_pixel_x + dx - marker_size / 2;
-                let py = player_pixel_y + dy - marker_size / 2;
-                if px < self.size && py < self.size {
-                    img.put_pixel(px, py, Rgba(self.player_marker_color));
-                }
+        let marker_half = marker_size / 2;
+        
+        // Calculate the starting position, ensuring we don't overflow
+        let start_x = if player_pixel_x >= marker_half { player_pixel_x - marker_half } else { 0 };
+        let start_y = if player_pixel_y >= marker_half { player_pixel_y - marker_half } else { 0 };
+        
+        // Calculate the ending position, ensuring we don't exceed the texture size
+        let end_x = (player_pixel_x + marker_half).min(self.size);
+        let end_y = (player_pixel_y + marker_half).min(self.size);
+        
+        // Draw the marker
+        for py in start_y..end_y {
+            for px in start_x..end_x {
+                img.put_pixel(px, py, Rgba(self.player_marker_color));
             }
         }
         
