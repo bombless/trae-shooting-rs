@@ -31,6 +31,15 @@ struct WallColor {
 @group(1) @binding(0)
 var<uniform> wall_color: WallColor;
 
+// 添加一个新的 uniform 缓冲区用于贴图偏移量
+struct TextureOffset {
+    offset: vec2<f32>,
+    _padding: vec2<f32>,
+};
+
+@group(3) @binding(0)
+var<uniform> texture_offset: TextureOffset;
+
 // 将纹理绑定移到条件判断外部
 @group(2) @binding(0)
 var t_diffuse: texture_2d<f32>;
@@ -55,8 +64,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color = in.color;
     var alpha = 1.0;
     
+    // 应用贴图偏移量到纹理坐标
+    var adjusted_tex_coords = in.tex_coords;
+    if (in.model_type > 0.5) {
+        // 只对墙体应用贴图偏移量
+        adjusted_tex_coords = in.tex_coords + texture_offset.offset;
+    }
+    
     // 对所有片段都进行纹理采样，但只在需要时使用结果
-    let tex_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    let tex_color = textureSample(t_diffuse, s_diffuse, adjusted_tex_coords);
     
     if (in.model_type > 0.5) {
         color = wall_color.color;

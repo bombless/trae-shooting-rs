@@ -29,6 +29,22 @@ impl Default for Color {
     }
 }
 
+// 添加贴图偏移量结构体
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+struct TextureOffset {
+    u: f32,
+    v: f32,
+}
+
+impl Default for TextureOffset {
+    fn default() -> Self {
+        TextureOffset {
+            u: 0.0,
+            v: 0.0,
+        }
+    }
+}
+
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new();
@@ -41,13 +57,17 @@ fn main() {
     // 创建共享的墙体颜色状态
     let wall_color = Arc::new(Mutex::new(Color::default()));
     
+    // 创建共享的贴图偏移量状态
+    let texture_offset = Arc::new(Mutex::new(TextureOffset::default()));
+    
     // 启动HTTP服务器线程
     let http_wall_color = wall_color.clone();
+    let http_texture_offset = texture_offset.clone();
     thread::spawn(move || {
-        start_http_server(http_wall_color);
+        start_http_server(http_wall_color, http_texture_offset);
     });
     
-    let mut state = pollster::block_on(State::new(&window, wall_color));
+    let mut state = pollster::block_on(State::new(&window, wall_color, texture_offset));
     let mut last_render_time = Instant::now();
     
     // Initialize controller support
@@ -133,7 +153,7 @@ fn main() {
 }
 
 // 启动HTTP服务器的函数
-fn start_http_server(wall_color: Arc<Mutex<Color>>) {
+fn start_http_server(wall_color: Arc<Mutex<Color>>, texture_offset: Arc<Mutex<TextureOffset>>) {
     use warp::Filter;
     // 创建一个运行时
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -159,12 +179,53 @@ fn start_http_server(wall_color: Arc<Mutex<Color>>) {
                 warp::reply::json(&*color)
             });
         
-        // 合并路由
-        let routes = color_route.or(get_color);
+        // 创建一个路由处理贴图U偏移量更新
+        let texture_offset_u_put = texture_offset.clone();
+        let u_offset_route = warp::path("texture")
+            .and(warp::path("u"))
+            .and(warp::put())
+            .and(warp::body::content_length_limit(1024 * 16).and(warp::body::bytes()))
+            .map(move |value: warp::hyper::body::Bytes| {
+                let mut offset = texture_offset_u_put.lock().unwrap();
+                offset.u = std::str::from_utf8(&value).unwrap().parse::<f32>().unwrap();
+                warp::reply::json(&*offset)
+            });
+        
+        // 创建一个路由处理贴图V偏移量更新
+        let texture_offset_v_put = texture_offset.clone();
+        let v_offset_route = warp::path("texture")
+            .and(warp::path("v"))
+            .and(warp::put())
+            .and(warp::body::content_length_limit(1024 * 16).and(warp::body::bytes()))
+            .map(move |value: warp::hyper::body::Bytes| {
+                let mut offset = texture_offset_v_put.lock().unwrap();
+                offset.u = std::str::from_utf8(&value).unwrap().parse::<f32>().unwrap();
+                warp::reply::json(&*offset)
+            });
+        
+        // 获取当前贴图偏移量的路由
+        let texture_offset_get = texture_offset.clone();
+        let get_texture_offset = warp::path("texture")
+            .and(warp::path("offset"))
+            .and(warp::get())
+            .map(move || {
+                let offset = texture_offset_get.lock().unwrap();
+                warp::reply::json(&*offset)
+            });
+        
+        // 合并所有路由
+        let routes = color_route
+            .or(get_color)
+            .or(u_offset_route)
+            .or(v_offset_route)
+            .or(get_texture_offset);
         
         println!("HTTP服务器启动在 http://localhost:3030");
         println!("使用 PUT /color 更新墙体颜色");
         println!("使用 GET /color 获取当前墙体颜色");
+        println!("使用 PUT /texture/u 更新贴图U偏移量");
+        println!("使用 PUT /texture/v 更新贴图V偏移量");
+        println!("使用 GET /texture/offset 获取当前贴图偏移量");
         
         warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
     });
@@ -198,12 +259,15 @@ struct State {
     minimap: minimap::Minimap, // 添加小地图
     minimap_vertex_buffer: wgpu::Buffer, // 小地图顶点缓冲区
     minimap_index_buffer: wgpu::Buffer, // 小地图索引缓冲区
+    texture_offset: Arc<Mutex<TextureOffset>>, // 添加贴图偏移量
+    texture_offset_buffer: wgpu::Buffer, // 贴图偏移量缓冲区
+    texture_offset_bind_group: wgpu::BindGroup, // 贴图偏移量绑定组
     minimap_indices_len: u32, // 小地图索引数量
     minimap_bind_group: wgpu::BindGroup, // 小地图绑定组
 }
 
 impl State {
-    async fn new(window: &Window, wall_color: Arc<Mutex<Color>>) -> Self {
+    async fn new(window: &Window, wall_color: Arc<Mutex<Color>>, texture_offset: Arc<Mutex<TextureOffset>>) -> Self {
 
         let size = window.inner_size();
         
@@ -412,12 +476,22 @@ impl State {
         
         // 创建墙体颜色 uniform 缓冲区
         let wall_color_data = [0.5f32, 0.5f32, 0.5f32, 0.0f32]; // 初始颜色 + padding
-
         
         let wall_color_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Wall Color Buffer"),
                 contents: bytemuck::cast_slice(&wall_color_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+        
+        // 创建贴图偏移量 uniform 缓冲区
+        let texture_offset_data = [0.0f32, 0.0f32, 0.0f32, 0.0f32]; // 初始偏移量 + padding
+        
+        let texture_offset_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Texture Offset Buffer"),
+                contents: bytemuck::cast_slice(&texture_offset_data),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
@@ -438,6 +512,25 @@ impl State {
                     }
                 ],
                 label: Some("wall_color_bind_group_layout"),
+            }
+        );
+        
+        // 创建贴图偏移量绑定组布局
+        let texture_offset_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ],
+                label: Some("texture_offset_bind_group_layout"),
             }
         );
 
@@ -484,7 +577,7 @@ impl State {
             }
         );
 
-        // 修改渲染管线布局，添加纹理绑定组布局
+        // 修改渲染管线布局，添加纹理绑定组布局和贴图偏移量绑定组布局
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -492,6 +585,7 @@ impl State {
                     &camera_bind_group_layout,
                     &wall_color_bind_group_layout,
                     &texture_bind_group_layout, // 添加纹理绑定组布局
+                    &texture_offset_bind_group_layout, // 添加贴图偏移量绑定组布局
                 ],
                 push_constant_ranges: &[],
             }
@@ -550,6 +644,20 @@ impl State {
                     }
                 ],
                 label: Some("wall_color_bind_group"),
+            }
+        );
+        
+        // 创建贴图偏移量绑定组
+        let texture_offset_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &texture_offset_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: texture_offset_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("texture_offset_bind_group"),
             }
         );
         
@@ -706,6 +814,9 @@ impl State {
             minimap_index_buffer, // 小地图索引缓冲区
             minimap_indices_len, // 小地图索引数量
             minimap_bind_group, // 小地图绑定组
+            texture_offset, // 添加贴图偏移量
+            texture_offset_buffer, // 贴图偏移量缓冲区
+            texture_offset_bind_group, // 贴图偏移量绑定组
         }
     }
     
@@ -819,6 +930,27 @@ impl State {
             label: Some("Render Encoder"),
         });
         
+        // 更新墙体颜色
+        let wall_color_lock = self.wall_color.lock().unwrap();
+        let wall_color_data = [
+            wall_color_lock.r as f32,
+            wall_color_lock.g as f32,
+            wall_color_lock.b as f32,
+            0.0f32, // padding
+        ];
+        self.queue.write_buffer(&self.wall_color_buffer, 0, bytemuck::cast_slice(&wall_color_data));
+        
+        // 更新贴图偏移量
+        let texture_offset_lock = self.texture_offset.lock().unwrap();
+        // 将u和v值作为一个vec2偏移量写入，与shader中的offset字段匹配
+        let texture_offset_data = [
+            texture_offset_lock.u,
+            texture_offset_lock.v,
+            0.0f32, // padding
+            0.0f32, // padding
+        ];
+        self.queue.write_buffer(&self.texture_offset_buffer, 0, bytemuck::cast_slice(&texture_offset_data));
+        
         // 渲染3D场景
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -850,6 +982,7 @@ impl State {
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.wall_color_bind_group, &[]); 
             render_pass.set_bind_group(2, &self.texture_bind_group, &[]); // 设置纹理绑定组
+            render_pass.set_bind_group(3, &self.texture_offset_bind_group, &[]); // 设置贴图偏移量绑定组
             
             // Render all models
             for model in &self.models {
